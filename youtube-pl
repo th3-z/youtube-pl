@@ -1,0 +1,142 @@
+#!/usr/bin/env python3
+
+import sys
+import argparse
+import fnmatch
+from os import listdir
+from os import makedirs
+from os.path import isfile, join, dirname, exists
+import youtube_dl
+
+URL_PATTERN = "*youtube.com/watch*"
+
+class YdlLogger(object):
+    def debug(self, msg):
+        pass
+
+    def warning(self, msg):
+        pass
+
+    def error(self, msg):
+        print(msg)
+
+def ydl_hook(d):
+    if d['status'] == 'finished':
+        print('Download complete, converting...')
+
+def parse_input(args):
+    urls  = []
+
+    with open(args.input_file, 'r') as file:
+        for line in file:
+            #line = line.strip()
+            if fnmatch.fnmatch(line, URL_PATTERN):
+                urls.append(line.strip())
+
+    if args.verbose:
+        print("Found", len(urls), "URLs in input file...")
+
+    return urls 
+
+def remove_existing(args, urls):
+    path = args.output_folder
+
+    existing_files = []
+    for f in listdir(path):
+        if isfile(join(path,f)):
+            existing_files.append(f)
+
+    ids = []
+    for url in urls: ids.append( url.split("?v=")[1] )
+
+    missing_urls = []
+    for url in urls:
+        id = url.split("?v=")[1]
+        exists = False
+        for f in existing_files:
+            if id in f: exists = True
+
+        if not exists:
+            missing_urls.append(url)
+        elif args.verbose:
+            print("Skipping", id, "exists in output folder.")
+
+    return missing_urls
+
+def download(args, urls):
+    ydl_opts = {
+        'format': 'bestaudio/best',
+        'postprocessors': [{
+            'key': 'FFmpegExtractAudio',
+            'preferredcodec': 'mp3',
+            'preferredquality': '192',
+        }],
+        'logger': YdlLogger(),
+        'progress_hooks': [ydl_hook],
+        'restrictfilenames': True,
+        'outtmpl': args.output_folder+"/%(title)s_-_%(id)s.%(ext)s"
+    }
+
+    with youtube_dl.YoutubeDL(ydl_opts) as ydl:
+        for url in urls:
+            print("Downloading: ", url)
+            ydl.download([url])
+
+def create_playlist(args):
+    if args.verbose:
+        print("Generating m3u playlist...")
+    
+    folder = args.output_folder
+    m3u_filename = join(folder, "playlist.m3u")
+    m3u_file = open(m3u_filename, "w")
+
+    write_string = ""
+
+    for f in listdir(folder):
+        if isfile(join(folder,f)) and f.endswith("mp3"):
+            write_string += f + "\n"
+
+    m3u_file.write(write_string)
+    m3u_file.close()
+
+
+def main():
+    arg_parser = argparse.ArgumentParser()
+    arg_parser.add_argument("input_file", \
+        help="Specify the file to read URLs from")
+
+    arg_parser.add_argument("-v", "--verbose", \
+        help="Incrase output verbosity", \
+        action="store_true")
+    arg_parser.add_argument("-n", "--no-playlist", \
+        help="Disable m3u playlist generation", \
+        action="store_true")
+    arg_parser.add_argument("-f", "--fetch-all", \
+        help="Download and replace files that already exist in output folder", \
+        action="store_true")
+    arg_parser.add_argument("-o", "--output-folder", \
+        help="Specify the output folder for downloaded files")
+
+    args = arg_parser.parse_args()
+
+    urls = parse_input(args)
+
+    if not args.output_folder:
+        args.output_folder = args.input_file + "_out"
+
+    if not exists(args.output_folder):
+        makedirs(args.output_folder)
+
+    if not args.fetch_all:
+        urls = remove_existing(args, urls)
+
+    download(args, urls)
+
+    if not args.no_playlist:
+        create_playlist(args)
+
+    print("All done.")
+
+if (__name__=="__main__"):
+    main()
+
