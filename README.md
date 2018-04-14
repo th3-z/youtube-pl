@@ -1,6 +1,10 @@
 # youtube-pl
 A script for managing local plaintext YouTube music playlists.
 
+### Requirements
+* Python 3.x
+* youtube_dl
+
 ### Usage
 Paste your links into a file on separate lines, anything that doesn't look like a link will be ignored so you may write labels too.
 
